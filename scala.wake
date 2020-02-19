@@ -15,21 +15,52 @@ def scalaPluginPath = "wit/lib"
 global def readIvyDepsJSON dir =
   source "{dir}/ivydependencies.json" | parseJSONFile
 
-# Should be installed by wit
+def fetchCoursier Unit =
+  def bin = source "{here}/fetch_coursier"
+  def dir = mkdir bloopInstall
+  def deps = sources here `.*\.py`
+  makePlan (bin.getPathName, dir.getPathName, Nil) (bin, dir, deps)
+  | editPlanEnvironment ("PYTHONDONTWRITEBYTECODE=1", _)
+  | runJob
+  | getJobOutput
+
+# Maintain compatibility with Wit 0.12.0 and below
 def coursierBin =
   match (files bloopInstall `.*coursier.*`)
     bin, Nil = makeStatePath bin
-    Nil      = makeBadPath (makeError "Coursier not found! Did you run `wit fetch-scala`?")
+    Nil      = fetchCoursier Unit
     l        = makeBadPath (makeError "Multiple coursier executables found! {catWith ", " l}")
 
-# Virtual job that owns all fetched ivy dependencies
-def ivyCacheDeps Unit =
+# Only get files 1 level under workspace root (emulates Wit <=0.12.0 behavior)
+def ivyDepsFiles = sources "." `[^/]*/ivydependencies\.json`
+
+# Virtual job that owns all wit-fetched ivy deps
+target existingIvyCacheDeps Unit =
   def fs = files ivyCache `.*`
   makePlan ("<ivycache>", ivyCache, Nil) Nil
   | setPlanKeep      False
   | setPlanFnOutputs (\_ fs)
   | runJobWith       virtualRunner
   | getJobOutputs
+
+# Job that fetches all ivy dependencies
+target ivyCacheDeps Unit =
+  def bin = source "{here}/fetch_ivy_dependencies"
+  def dir = mkdir bloopInstall
+  def cache = mkdir ivyCache
+  def otherDeps = source "{here}/scala-bridge-fetcher_2.12-0.1.0.jar", sources here `.*\.py`
+  def cmd = bin.getPathName, "--scala", dir.getPathName, "--cache", cache.getPathName, map getPathName ivyDepsFiles
+  def existing = existingIvyCacheDeps Unit
+  def allDeps = bin, dir, cache, coursierBin, otherDeps ++ ivyDepsFiles ++ existing
+  def ivycacheOnly l = l | filter (matches `ivycache/.*`)
+  def newIvyCacheDeps =
+    makePlan cmd allDeps
+    | editPlanEnvironment ("PYTHONDONTWRITEBYTECODE=1", _)
+    # We need to ensure that we only recognize outputs in ivycache, some bloop artifacts are non-deterministic
+    | editPlanFnOutputs (ivycacheOnly ∘ _)
+    | runJob
+    | getJobOutputs
+  newIvyCacheDeps ++ existing
 
 # Memoized tree for converting from Strings to Paths to jars in Coursier cache
 target ivyCacheJars Unit =

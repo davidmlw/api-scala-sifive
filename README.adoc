@@ -190,7 +190,7 @@ tuple ScalaModule =
 
 === Running tests locally
 
-You must first have `wit` (v0.12.0), `wake` (v0.17.1), and `jq` (v1.5) installed.
+You must first have `wit` (v0.12.0) and `wake` (v0.17.1).
 Note that only committed changes will be tested.
 
 ----
