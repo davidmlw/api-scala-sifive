@@ -203,3 +203,9 @@ mv <name of api-scala-sifive> api-scala-sifive
 
 ./api-scala-sifive/tests/run-tests.sh
 ----
+
+Note that run-tests.sh emulates the `preinstall` behavior which is based on Wit
+<= v0.12.0 Scala plugin fetching behavior.
+It will fetch all ivydependencies.json files that are one directory below tests/.
+Putting an ivydependencies.json file in a directory deeper than that prevents
+it from being fetched by `run-tests.sh`.

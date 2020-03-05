@@ -20,7 +20,7 @@ do
 done
 
 
-ivy_dep_files=$(find $tests_path -name 'ivydependencies.json')
+ivy_dep_files=$(find $tests_path -name 'ivydependencies.json' -maxdepth 2)
 $fetch_ivy_dependencies --scala scala --cache ivycache $ivy_dep_files
 
 wake runAPIScalaSiFiveTests Unit
