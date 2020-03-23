@@ -3,6 +3,7 @@
 def buildRoot = mkdir "build"
 def root = mkdir "{buildRoot.getPathName}/{here}"
 def bloopDir = mkdir "{root.getPathName}/bloop"
+def bloopWorkspaceDir = mkdir ".bloop"
 # Where I expect Scala to be installed by wit
 def bloopInstall = "scala"
 # Where I expect Scala Ivy dependencies to be downloaded
@@ -305,7 +306,7 @@ global def getScalaModuleTransIvyDeps module =
   allMods | mapFlat getScalaModuleIvyDeps | distinctBy cmp
 
 # Prefix with wildcard for the workspace
-def inws path = "$WORKSPACE/{path}"
+def inws path = "{workspace}/{path}"
 
 # TODO implement scalacOptions
 def bloopScalaLibJSON scalaVersion scalacOptions =
@@ -330,14 +331,14 @@ def bloopScalaLibJSON scalaVersion scalacOptions =
     Nil
   )
 
-def buildDir module =
+def buildDir module baseDir =
   def suffix = module.getScalaModuleScalaVersion.scalaVersionMajorString
-  "{buildRoot.getPathName}/{module.getScalaModuleName}/scala-{suffix}"
-def bloopOutDir module = "{bloopDir.getPathName}/{module.getScalaModuleName}"
-def moduleClassesDir module = "{module.buildDir}/classes"
+  "{baseDir.getPathName}/{module.getScalaModuleName}/scala-{suffix}"
+def bloopOutDir module baseDir = "{baseDir.getPathName}/{module.getScalaModuleName}"
+def moduleClassesDir module baseDir= "{buildDir module baseDir}/classes"
 
 # Assumes ScalaModule itself is valid
-def bloopScalaModuleJSON module =
+def bloopScalaModuleJSON module outputDir =
   def name = module.getScalaModuleName
   def dir = module.getScalaModuleRootDir
   def ver = module.getScalaModuleScalaVersion
@@ -353,7 +354,7 @@ def bloopScalaModuleJSON module =
       module.getScalaModuleScalacOptions ++ (map getPluginOpt module.getScalaModuleCompilerPlugins)
     bloopScalaLibJSON ver scalacOpts
   def bloopVersion = "1.2.5"
-  def depClasspath = transDeps | map moduleClassesDir
+  def depClasspath = transDeps | map (moduleClassesDir _ outputDir)
   def genSrcs = module.getScalaModuleGeneratedSources
   def sourceFiles = module.getScalaModuleAllSourceFiles | map getPathName
   def resourceDirs = module.getScalaModuleExpandedResourceDirs
@@ -364,11 +365,11 @@ def bloopScalaModuleJSON module =
       "directory" → JString dir.inws,
       "sources" → sourceFiles | map inws | map JString | JArray,
       # Until bloop incremental compilation works when invoked as CLI, lie about dependencies
-      #"dependencies" → map getScalaModuleName modDeps | map JString | JArray,
-      "dependencies" → JArray Nil,
+      "dependencies" → map getScalaModuleName transDeps | map JString | JArray,
+      #"dependencies" → JArray Nil,
       "classpath" → ivyClasspath ++ depClasspath | map inws | map JString | JArray,
-      "out" → module.bloopOutDir.inws | JString,
-      "classesDir" → module.moduleClassesDir.inws | JString,
+      "out" → (bloopOutDir module outputDir).inws | JString,
+      "classesDir" → (moduleClassesDir module outputDir).inws | JString,
       "resources" → resourceDirs | map inws | map JString | JArray,
       "scala" → scalaJSON,
       Nil
@@ -378,14 +379,14 @@ def bloopScalaModuleJSON module =
 
 # TODO is this necessary anymore?
 target memoizeBloopTemplate name \ module =
-  def content = bloopScalaModuleJSON module | prettyJSON
+  def content = (bloopScalaModuleJSON module bloopDir) | prettyJSON
   write (bloopTemplateName module) content
 def bloopTemplate module =
   memoizeBloopTemplate module.getScalaModuleName module
 
 def bloopTemplateName module =
   def name = module.getScalaModuleName
-  "{bloopDir.getPathName}/{name}.json.template"
+  "{bloopDir.getPathName}/{name}.json"
 
 def bloopConfigName module =
   def name = module.getScalaModuleName
@@ -393,12 +394,12 @@ def bloopConfigName module =
 
 # Compiles a ScalaModule, returns bloop config and generated jar file
 target memoizeBloopCompile name \ module =
-  def statedir = mkdir module.bloopOutDir
+  def statedir = mkdir (bloopOutDir module bloopDir)
   def bin = bloopWake
   def transDeps = module.getScalaModuleTransDeps
   def configTemplate = module.bloopTemplate
   def configFilename = module.bloopConfigName
-  def jarDir = mkdir "{module.buildDir}/jar"
+  def jarDir = mkdir "{buildDir module buildRoot}/jar"
   def jarName = "{jarDir.getPathName}/{name}.jar"
   def inputs =
     def sourceFiles = module.getScalaModuleAllSourceFiles ++ module.getScalaModuleResourceFiles
@@ -422,14 +423,14 @@ target memoizeBloopCompile name \ module =
     | editPlanEnvironment ("JAVA_OPTS=-Xss8M", "PYTHONPATH={scalaPluginPath}", visibleHashHack, _)
     | setPlanFnInputs (\_ inputs | map getPathName)
     | setPlanLocalOnly True
-    | setPlanFnOutputs (\_ configFilename, jarName, Nil)
+    | setPlanFnOutputs (\_ jarName, Nil)
     | runJob
   def err paths = Fail (makeError "Expected exactly one json and one jar, got {format paths}")
-  def result = match plan.getJobOutputs
-    json, jar, Nil = Pass (Pair json jar)
-    # If the job fails, it returns 1 BadPath
-    one, Nil       = one.getPathError | omap Fail | getOrElse (err (one, Nil))
-    l              = err l
+  def result = match plan.getJobOutputs.head
+    Some jar = match jar.getPathResult
+      Pass path = Pass (Pair configTemplate path)
+      Fail _    = Fail jarName.makeError
+    None =  Fail jarName.makeError
   # Compose possible errors
   module.scalaModuleToResult
   | rmapPass (\_ result)
@@ -452,3 +453,14 @@ global def scalaModuleClasspath module =
     resolveIvyDeps (scalaIvyDep, ivyDeps)
   def moduleJars = (module, module.getScalaModuleTransDeps) | map compileScalaModule
   moduleJars ++ ivyJars
+
+target moduleMetalsJson module =
+  def content = bloopScalaModuleJSON module bloopWorkspaceDir | prettyJSON
+  def name = module.getScalaModuleName
+  def json = "{bloopWorkspaceDir.getPathName}/{name}.json"
+  write json content
+
+global def genBloopWorkspace module =
+  def transDeps = module.getScalaModuleTransDeps
+  def depJsons = map moduleMetalsJson transDeps
+  (moduleMetalsJson module), depJsons
