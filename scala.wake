@@ -371,7 +371,7 @@ def bloopOutDir module baseDir = "{baseDir.getPathName}/{module.getScalaModuleNa
 def moduleClassesDir module baseDir= "{buildDir module baseDir}/classes"
 
 # Assumes ScalaModule itself is valid
-def bloopScalaModuleJSON module outputDir =
+global def bloopScalaModuleJSON module outputDir =
   def name = module.getScalaModuleName
   def dir = module.getScalaModuleRootDir
   def ver = module.getScalaModuleScalaVersion
@@ -456,14 +456,14 @@ target memoizeBloopCompile name \ module =
     | editPlanEnvironment ("JAVA_OPTS=-Xss8M", visibleHashHack, _)
     | setPlanFnInputs (\_ inputs | map getPathName)
     | setPlanLocalOnly True
-    | setPlanFnOutputs (\_ jarName, Nil)
+    | setPlanFnOutputs (\_ configFilename, jarName, Nil)
     | runJob
   def err paths = Fail (makeError "Expected exactly one json and one jar, got {format paths}")
-  def result = match plan.getJobOutputs.head
-    Some jar = match jar.getPathResult
-      Pass path = Pass (Pair configTemplate path)
-      Fail _    = Fail jarName.makeError
-    None =  Fail jarName.makeError
+  def result = match plan.getJobOutputs
+    json, jar, Nil = Pass (Pair json jar)
+    # If the job fails, it returns 1 BadPath
+    one, Nil       = one.getPathError | omap Fail | getOrElse (err (one, Nil))
+    l              = err l
   # Compose possible errors
   module.scalaModuleToResult
   | rmapPass (\_ result)
@@ -486,6 +486,7 @@ global def scalaModuleClasspath module =
     resolveIvyDeps (scalaIvyDep, ivyDeps)
   def moduleJars = (module, module.getScalaModuleTransDeps) | map compileScalaModule
   moduleJars ++ ivyJars
+
 
 target moduleMetalsJson module =
   def content = bloopScalaModuleJSON module bloopWorkspaceDir | prettyJSON
