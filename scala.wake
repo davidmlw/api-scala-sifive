@@ -419,7 +419,7 @@ def bloopTemplate module =
 
 def bloopTemplateName module =
   def name = module.getScalaModuleName
-  "{bloopDir.getPathName}/{name}.json"
+  "{bloopDir.getPathName}/{name}.json.template"
 
 def bloopConfigName module =
   def name = module.getScalaModuleName
