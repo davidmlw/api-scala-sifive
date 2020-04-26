@@ -1,0 +1,130 @@
+
+def buildRoot = mkdir "build"
+def bloopWorkspaceDir = mkdir ".bloop"
+
+# Prefix with wildcard for the workspace
+def inws path = "{workspace}/{path}"
+
+def buildDir module =
+  def suffix = module.getScalaModuleScalaVersion.scalaVersionMajorString
+  "{buildRoot.getPathName}/{module.getScalaModuleName}/scala-{suffix}"
+def bloopOutDir module = "{bloopWorkspaceDir.getPathName}/{module.getScalaModuleName}"
+def moduleClassesDir module = "{module.buildDir}/classes"
+
+# Given a directory, return all Java and Scala source files
+def ourSources dir = sources dir `.*\.(scala|java)`
+
+def getScalaModuleExpandedSourceDirs module =
+  def mroot = module.getScalaModuleRootDir
+  map (simplify "{mroot}/{_}") module.getScalaModuleSourceDirs
+
+def getScalaModuleExpandedResourceDirs module =
+  def mroot = module.getScalaModuleRootDir
+  map (simplify "{mroot}/{_}") module.getScalaModuleResourceDirs
+
+# Source files found in the source directories
+def getScalaModuleSourceFiles module =
+  # TODO should this be memoized?
+  module.getScalaModuleExpandedSourceDirs | mapFlat ourSources
+
+# Source files including generated sources
+def getScalaModuleAllSourceFiles module =
+  module.getScalaModuleSourceFiles ++ module.getScalaModuleGeneratedSources
+
+# All files found in the resource directories
+def getScalaModuleResourceFiles module =
+  module.getScalaModuleExpandedResourceDirs | mapFlat (sources _ `.*`)
+
+# TODO implement scalacOptions
+def bloopScalaLibJSON scalaVersion scalacOptions =
+  def ivyDep = scalaCompilerIvyDep scalaVersion
+  def ivyJars = resolveIvyDeps (ivyDep, Nil)
+  def jars = ivyJars | map getPathName | map inws | map JString | JArray
+  JObject (
+    "organization" → JString ivyDep.getIvyDepOrg,
+    "name"         → JString ivyDep.getIvyDepName,
+    "version"      → JString ivyDep.getIvyDepRev,
+    "options"      → scalacOptions | map JString | JArray,
+    "jars"         → jars,
+    "setup" → JObject (
+      "order" → JString "mixed",
+      "addLibraryToBootClasspath" → JBoolean True,
+      "addCompilerToClasspath" → JBoolean False,
+      "addExtraJarsToClasspath" → JBoolean False,
+      "manageBootClasspath" → JBoolean True,
+      "filterLibraryFromClasspath" → JBoolean True,
+      Nil
+    ),
+    Nil
+  )
+# Assumes ScalaModule itself is valid
+global def bloopWorkspaceScalaModuleJSON module =
+  def name = module.getScalaModuleName
+  def dir = module.getScalaModuleRootDir
+  def ver = module.getScalaModuleScalaVersion
+  def transDeps = module.getScalaModuleTransDeps
+  def ivyClasspath =
+    def ivyDeps = module.getScalaModuleTransIvyDeps
+    def deps = map (expandIvyDep ver) ivyDeps
+    def scalaCompiler = module.getScalaModuleScalaVersion.scalaCompilerIvyDep
+    resolveIvyDeps (scalaCompiler, deps) | map getPathName
+  def scalaJSON =
+    def scalacOpts =
+      def getPluginOpt dep = expandIvyDep ver dep | getIvyDepJar | getPathName | inws | ("-Xplugin:{_}")
+      module.getScalaModuleScalacOptions ++ (map getPluginOpt module.getScalaModuleCompilerPlugins)
+    bloopScalaLibJSON ver scalacOpts
+  def bloopVersion = "1.4.0-RC1"
+  def depClasspath = transDeps | map moduleClassesDir
+  def genSrcs = module.getScalaModuleGeneratedSources
+  def sourceFiles = module.getScalaModuleAllSourceFiles | map getPathName
+  def resourceDirs = module.getScalaModuleExpandedResourceDirs
+  def sourceHash = module | getScalaModuleAllSourceFiles | hashPaths | format
+  JObject (
+    "version" → JString bloopVersion,
+    "project" → JObject (
+      "name" → JString name,
+      "directory" → JString dir.inws,
+      "sources" → sourceFiles | map inws | map JString | JArray,
+      # Until bloop incremental compilation works when invoked as CLI, lie about dependencies
+      "dependencies" → map getScalaModuleName transDeps | map JString | JArray,
+      #"dependencies" → JArray Nil,
+      "classpath" → ivyClasspath ++ depClasspath | map inws | map JString | JArray,
+      "out" → module.bloopOutDir.inws | JString,
+      "classesDir" → module.moduleClassesDir.inws | JString,
+      "resources" → resourceDirs | map inws | map JString | JArray,
+      "scala" → scalaJSON,
+      Nil
+    ),
+    "hashcode" → JString sourceHash,
+    Nil
+  )
+
+target moduleMetalsJson module =
+  def content = module | bloopWorkspaceScalaModuleJSON | prettyJSON
+  def name = module.getScalaModuleName
+  def json = "{bloopWorkspaceDir.getPathName}/{name}.json"
+  write json content
+
+global def genBloopWorkspace module =
+  def transDeps = module.getScalaModuleTransDeps
+  def depJsons = map moduleMetalsJson transDeps
+  (moduleMetalsJson module), depJsons
+
+target hashcode f =
+  def get f = prim "get_hash"
+  def reuse = get f
+  if reuse !=* "" then reuse else
+    def hashPlan cmd  =
+      makePlan cmd Nil
+    def job = hashPlan ("<hash>", f, Nil) | runJobWith localRunner
+    def hash =
+      job.getJobStdout
+      | getWhenFail ""
+      | extract `(.{64}).*`
+    match job.isJobOk hash
+      True (x, Nil) = x
+      _ _ = "BadHash"
+
+global target hashPaths paths =
+    def hash content = prim "hash"
+    paths | map getPathName | sortBy (_ <* _) | map hashcode | hash
