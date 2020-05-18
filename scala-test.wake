@@ -1,0 +1,43 @@
+
+global def makeScalaTestModule name dir version =
+  makeScalaModule name dir version
+  | setScalaModuleSourceDirs ("src/test/scala", Nil)
+  | setScalaModuleResourceDirs ("src/test/resources", Nil)
+
+global def makeScalaTestModuleFromJSON dir name =
+  makeScalaModuleFromJSON dir name
+  | setScalaModuleSourceDirs ("src/test/scala", Nil)
+  | setScalaModuleResourceDirs ("src/test/resources", Nil)
+
+tuple ScalaTestPlan =
+  global Module: ScalaModule
+  global Tester: String
+  global Testcase: Option String
+  global Report: Option String
+  global ExtraArgs: List String
+  global Resources: List String
+  global Visibles: List Path
+
+global def makeScalaTestPlan module tester =
+  ScalaTestPlan module tester None None Nil Nil Nil
+
+global def runScalaTest plan =
+  def java = which "java"
+  def classpath = plan.getScalaTestPlanModule.scalaModuleClasspath
+  def cp = classpath | map getPathName | catWith ":"
+  def main = "org.scalatest.tools.Runner"
+  def testerArgs = "-s", plan.getScalaTestPlanTester, Nil
+  def reportArgs = match plan.getScalaTestPlanReport
+    Some a = "-fF", a, Nil
+    None   = "-oF", Nil
+  def testcase = match plan.getScalaTestPlanTestcase
+    Some a = "-z", a, Nil
+    None   = Nil
+  def extraArgs = plan.getScalaTestPlanExtraArgs
+  def args = reportArgs ++ testerArgs ++ testcase ++ extraArgs
+  def cmd = java, "-cp", cp, main, args
+  def resources = plan.getScalaTestPlanResources
+  def visibles = plan.getScalaTestPlanVisibles
+  makePlan cmd (classpath++visibles)
+  | editPlanResources (resources ++ _)
+  | runJob
