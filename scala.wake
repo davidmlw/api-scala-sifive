@@ -80,12 +80,14 @@ def ivyCacheDeps =
       | runJob
       | getJobOutputs
 
-
+global topic preBuildJars : Path
 # Memoized tree for converting from Strings to Paths to jars in Coursier cache
 target ivyCacheJars Unit =
   def isJar = matches `.*\.jar` _.getPathName
+  def preBuilds = subscribe preBuildJars
   ivyCacheDeps
   | filter isJar
+  | (_ ++ preBuilds)
   | mapPartial (\p p.getPathName.stripIvyPathPrefix | omap (Pair _ p))
   | listToTree cmpIvyCachePair
 
