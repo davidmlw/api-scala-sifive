@@ -1,37 +1,43 @@
 name: Test
-on: [push, pull_request]
+on:
+   push:
+     branches:
+     - master
+   pull_request:
+     branches:
+     - master
+
 jobs:
   test:
+    name: Run all tests
     runs-on: ubuntu-latest
+
     steps:
     - uses: actions/checkout@v2
     - name: Run tests
-      run: |
-        set -euo pipefail
-        docker run \
-          --volume="$GITHUB_WORKSPACE:/mnt/workspace" \
-          --workdir="/mnt/workspace" \
-          --rm \
-          sifive/environment-blockci:0.3.0 \
-          tests/run-tests.sh
+      uses: sifive/environment-blockci-sifive/actions/shell@0.7.1
+      with:
+        command: tests/run-tests.sh
 
   test-no-network:
+    name: Test without network access
     runs-on: ubuntu-latest
+
     steps:
     - uses: actions/checkout@v2
-    - name: Test that builds work without internet access
+
+    - name: Fetch with network access
+      uses: sifive/environment-blockci-sifive/actions/shell@0.7.1
+      with:
+        command: tests/setup-tests.sh
+
+    - name: Run sanity check without network access
       run: |
         set -euo pipefail
-        docker run \
-          --volume="$GITHUB_WORKSPACE:/mnt/workspace" \
-          --workdir="/mnt/workspace" \
-          --rm \
-          sifive/environment-blockci:0.3.0 \
-          tests/setup-tests.sh
         docker run \
           --volume="$GITHUB_WORKSPACE:/mnt/workspace" \
           --workdir="/mnt/workspace" \
           --rm \
           --network none \
-          sifive/environment-blockci:0.3.0 \
-          wake compileScalaModule exampleScalaModule
+          sifive/environment-blockci:0.7.1 \
+          wake -x 'compileScalaModule exampleScalaModule | getPathResult'
