@@ -6,3 +6,10 @@
     ]
   }
 }
+{
+  "example-test": {
+    "scalaVersion": "2.12.8",
+    "dependencies": [
+    ]
+  }
+}

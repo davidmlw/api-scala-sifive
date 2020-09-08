@@ -12,4 +12,14 @@ def test Unit =
     Signaled i = Fail "Signaled with status {i.format}".makeError
     Aborted e = Fail e
 
-publish apiScalaSiFiveTests = test, Nil
+global def exampleScalaTestModule = makeScalaTestModuleFromJSON here "example-test"
+
+def scalaTest Unit =
+  def job = makeScalaTestPlan exampleScalaTestModule "exampleSpec" | runScalaTest
+  match job.getJobStatus
+    Exited 0 = Pass "Passed"
+    Exited i = Fail "Exited with status {i.format}".makeError
+    Signaled i = Fail "Signaled with status {i.format}".makeError
+    Aborted e = Fail e
+
+publish apiScalaSiFiveTests = test, scalaTest, Nil
