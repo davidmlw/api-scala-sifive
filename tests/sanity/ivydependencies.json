@@ -4,9 +4,7 @@
     "dependencies": [
       "org.json4s::json4s-native:3.6.7"
     ]
-  }
-}
-{
+  },
   "example-test": {
     "scalaVersion": "2.12.8",
     "dependencies": [
