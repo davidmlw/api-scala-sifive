@@ -16,6 +16,7 @@ global def exampleScalaTestModule = makeTestScalaModuleFromJSON here "example-te
 
 def scalaTest Unit =
   def job = makeScalaTestPlan exampleScalaTestModule "exampleSpec" | runScalaTest
+  def _ = job.getJobStdout | rmap println
   match job.getJobStatus
     Exited 0 = Pass "Passed"
     Exited i = Fail "Exited with status {i.format}".makeError
