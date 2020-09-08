@@ -15,7 +15,7 @@ def test Unit =
 global def exampleScalaTestModule = makeTestScalaModuleFromJSON here "example-test"
 
 def scalaTest Unit =
-  def job = makeScalaTestPlan exampleScalaTestModule "exampleSpec" | runScalaTest
+  def job = makeScalaTestPlan exampleScalaTestModule "ExampleSpec" | runScalaTest
   def _ = job.getJobStdout | rmap println
   match job.getJobStatus
     Exited 0 = Pass "Passed"
