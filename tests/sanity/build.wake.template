@@ -12,7 +12,7 @@ def test Unit =
     Signaled i = Fail "Signaled with status {i.format}".makeError
     Aborted e = Fail e
 
-global def exampleScalaTestModule = makeScalaTestModuleFromJSON here "example-test"
+global def exampleScalaTestModule = makeTestScalaModuleFromJSON here "example-test"
 
 def scalaTest Unit =
   def job = makeScalaTestPlan exampleScalaTestModule "exampleSpec" | runScalaTest
